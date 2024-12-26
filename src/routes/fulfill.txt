@@ -1,0 +1,118 @@
+// Step 4: Filler executes order and websocket notifies swapper
+router.post('/:orderId/execute', async (req, res, next) => {
+    try {
+        const { orderId } = req.params;
+        const { fillerAddress, signature } = req.body;
+
+        // Get order details
+        const orderFromDb = await OrderDb.getOrderById(orderId);
+        if (!orderFromDb) {
+            throw new Error('Order not found');
+        }
+
+        // Execute the order
+        const receipt = await orderService.executeOrder({
+            orderId,
+            fillerAddress,
+            signature
+        });
+
+        // Update order status
+        await OrderDb.updateOrderExecution(orderId, {
+            status: 'EXECUTED',
+            txHash: receipt.transactionHash,
+            gasUsed: receipt.gasUsed.toString(),
+            effectiveGasPrice: receipt.effectiveGasPrice.toString(),
+            blockNumber: receipt.blockNumber
+        });
+
+        res.json({
+            txHash: receipt.transactionHash,
+            status: 'EXECUTED',
+            executionDetails: {
+                gasUsed: receipt.gasUsed.toString(),
+                effectiveGasPrice: receipt.effectiveGasPrice.toString(),
+                blockNumber: receipt.blockNumber
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+    async verifyFillerSignature(
+        order: CosignedV2DutchOrder,
+        signature: string,
+        fillerAddress: string
+    ): Promise<boolean> {
+        if (!order) {
+            throw new ValidationError('Order is required');
+        }
+        if (!signature || !signature.startsWith('0x')) {
+            throw new ValidationError('Valid signature is required (must start with 0x)');
+        }
+        this.validateAddress(fillerAddress, 'fillerAddress');
+
+        try {
+            const timestamp = Math.floor(Date.now() / 1000);
+            const fillerOrderData = {
+                orderHash: order.hash(),
+                filler: fillerAddress,
+                timestamp
+            };
+
+            const { domain } = order.permitData();
+            const recovered = ethers.utils.verifyTypedData(
+                domain,
+                this.FILLER_ORDER_TYPES,
+                fillerOrderData,
+                signature
+            );
+
+            const isValidSignature = recovered.toLowerCase() === fillerAddress.toLowerCase();
+
+            if (!isValidSignature) {
+                console.warn('Filler signature verification failed', {
+                    expectedFiller: fillerAddress,
+                    recoveredFiller: recovered,
+                    orderHash: order.hash()
+                });
+            }
+
+            return isValidSignature;
+        } catch (error) {
+            console.error('Filler signature verification failed:', {
+                error: error.message,
+                orderHash: order.hash(),
+                fillerAddress
+            });
+            return false;
+        }
+    }
+
+
+    async executeOrder(params: OrderExecutionParams): Promise<ethers.ContractReceipt> {
+        this.validateOrderExecution(params);
+
+        const orderFromDb = await OrderDB.getOrderById(params.orderId);
+        if (!orderFromDb) {
+            throw new Error('Order not found');
+        }
+
+        const serealizedOrder = orderFromDb.serializedOrder
+        const [success, calldata] = await this.reactorContract.callStatic.simulateExecute({
+            order: serealizedOrder,
+            sig: params.signature
+        });
+
+        if (!success) {
+            throw new Error(`Order execution would fail: ${calldata}`);
+        }
+
+        const tx = await this.reactorContract.execute({
+            order: serealizedOrder,
+            sig: params.signature
+        });
+
+        return await tx.wait();
+    }

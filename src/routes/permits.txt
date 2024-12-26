@@ -1,0 +1,48 @@
+// Step 1: Check if token approval is needed
+// router.get('/check-allowance', async (req, res) => {
+//     try {
+//         const { tokenAddress, userAddress, amount } = req.body;
+
+//         // Create ERC20 contract instance
+//         const tokenContract = new ethers.Contract(
+//             tokenAddress,
+//             ['function allowance(address,address) view returns (uint256)'],
+//             provider
+//         );
+
+//         // Check current allowance for Permit2 contract
+//         const currentAllowance = await tokenContract.allowance(
+//             userAddress,
+//             process.env.PERMIT2_ADDRESS
+//         );
+
+//         const needsApproval = currentAllowance.lt(ethers.BigNumber.from(amount));
+
+//         res.json({
+//             needsApproval,
+//             currentAllowance: currentAllowance.toString()
+//         });
+//     } catch (error) {
+//         next(error);
+//     }
+// });
+
+// // Step 2: Get permit signature data
+// router.post('/permit-data', async (req, res) => {
+//     try {
+//         const { tokenAddress, amount, userAddress } = req.body;
+
+//         // Generate permit data that needs to be signed by the user
+//         const permitData = await permitService.generatePermitData({
+//             token: tokenAddress,
+//             amount: ethers.BigNumber.from(amount),
+//             owner: userAddress,
+//             spender: process.env.V2_DUTCH_ORDER_REACTOR,
+//             deadline: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+//         });
+
+//         res.json(permitData);
+//     } catch (error) {
+//         next(error);
+//     }
+// });
